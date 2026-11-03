@@ -1,12 +1,3 @@
-// ==================================================
-// COOLING EQUITY INDEX - BEGINNER MINI PROJECT
-// STUDY AREA: VISAKHAPATNAM
-// PERIOD: MARCH TO MAY 2024
-// ==================================================
-
-
-// STEP 1: LOAD STUDY AREA
-
 var studyArea = ee.FeatureCollection(
   'projects/project1-504812/assets/vizag_boundary'
 );
@@ -17,14 +8,8 @@ Map.centerObject(studyArea, 10);
 
 Map.addLayer(studyArea, {color: 'white'}, 'Study Area');
 
-
-// STEP 2: SET THE STUDY DATES
-
 var startDate = '2024-03-01';
 var endDate = '2024-06-01';
-
-
-// STEP 3: LOAD LANDSAT IMAGES
 
 var landsat8 = ee.ImageCollection(
   'LANDSAT/LC08/C02/T1_L2'
@@ -34,8 +19,6 @@ var landsat9 = ee.ImageCollection(
   'LANDSAT/LC09/C02/T1_L2'
 );
 
-// Combine Landsat 8 and Landsat 9.
-
 var landsat = landsat8
   .merge(landsat9)
   .filterBounds(roi)
@@ -44,17 +27,10 @@ var landsat = landsat8
 
 print('Number of Landsat images:', landsat.size());
 
-
-// STEP 4: REMOVE CLOUDS AND PREPARE IMAGES
-
 function removeClouds(image) {
 
   var qa = image.select('QA_PIXEL');
-
-  // Remove cloudy and shadow pixels.
   var cloudMask = qa.bitwiseAnd(63).eq(0);
-
-  // Convert satellite bands into reflectance.
   var optical = image.select([
     'SR_B4',
     'SR_B5',
@@ -62,27 +38,18 @@ function removeClouds(image) {
   ])
   .multiply(0.0000275)
   .add(-0.2);
-
-  // Convert temperature into Celsius.
   var temperature = image.select('ST_B10')
     .multiply(0.00341802)
     .add(149)
     .subtract(273.15)
     .rename('LST');
-
-  // Combine the bands.
   return optical
     .addBands(temperature)
     .updateMask(cloudMask)
     .updateMask(image.select('QA_RADSAT').eq(0));
 }
 
-// Apply cloud removal.
 var cleanImages = landsat.map(removeClouds);
-
-
-// STEP 5: CREATE ONE IMAGE
-
 var image = cleanImages
   .median()
   .clip(roi);
@@ -97,10 +64,6 @@ Map.addLayer(
   'Satellite Image',
   false
 );
-
-
-// STEP 6: CALCULATE LAND SURFACE TEMPERATURE
-
 var LST = image.select('LST');
 
 Map.addLayer(
@@ -113,9 +76,6 @@ Map.addLayer(
   'Land Surface Temperature',
   false
 );
-
-
-// STEP 7: CALCULATE NDVI
 
 var NDVI = image.expression(
   '(NIR - RED) / (NIR + RED)',
@@ -135,10 +95,6 @@ Map.addLayer(
   'Vegetation NDVI',
   false
 );
-
-
-// STEP 8: CALCULATE NDBI
-
 var NDBI = image.expression(
   '(SWIR - NIR) / (SWIR + NIR)',
   {
@@ -157,33 +113,20 @@ Map.addLayer(
   'Built-up NDBI',
   false
 );
-
-
-// STEP 9: NORMALIZE NDVI WITH FIXED BOUNDS
-
 var vegetation = NDVI
   .subtract(-0.2)
   .divide(1.0)
   .clamp(0, 1);
-
-
-// STEP 10: NORMALIZE TEMPERATURE WITH FIXED BOUNDS
 
 var temperatureScore = LST
   .subtract(22)
   .divide(26) // Ranges from 22°C to 48°C
   .clamp(0, 1);
 
-
-// STEP 11: NORMALIZE BUILT-UP AREAS WITH FIXED BOUNDS
-
 var builtUp = NDBI
   .subtract(-0.2)
   .divide(0.6)
   .clamp(0, 1);
-
-
-// STEP 12: IDENTIFY WATER
 
 var waterImage = ee.Image(
   'JRC/GSW1_4/GlobalSurfaceWater'
@@ -191,10 +134,7 @@ var waterImage = ee.Image(
 
 var water = waterImage.gte(30)
   .unmask(0)
-  .clip(roi);
-
-
-// STEP 13: CALCULATE DISTANCE FROM WATER
+  .clip(roi)
 
 var waterArea = roi.buffer(3100);
 
@@ -215,25 +155,14 @@ var waterCooling = ee.Image.constant(1)
   .clip(roi);
 
 
-// STEP 14: CALCULATE COOLING SCORE
-
 var coolingScore = vegetation
   .multiply(0.60)
   .add(waterCooling.multiply(0.40));
 
 
-// =============================================================
-// STEP 15 & 16: CORRECTED HEATING SCORE AND FINAL CEI
-// =============================================================
-
-// Temperature = 60%
-// Built-up areas = 40% (Balanced weights avoiding local distortion)
-
 var heatingScore = temperatureScore
   .multiply(0.60)
   .add(builtUp.multiply(0.40));
-
-// CEI = Cooling Score - Heating Score
 
 var CEI = coolingScore
   .subtract(heatingScore)
@@ -250,9 +179,6 @@ Map.addLayer(
   false
 );
 
-
-// STEP 17: CREATE THREE CLASSES
-
 var CEI_Class = ee.Image.constant(2)
   .where(CEI.gt(0.15), 1)
   .where(CEI.lt(-0.15), 3)
@@ -260,7 +186,6 @@ var CEI_Class = ee.Image.constant(2)
   .clip(roi);
 
 
-// STEP 18: DISPLAY FINAL MAP
 
 Map.addLayer(
   CEI_Class,
@@ -277,7 +202,6 @@ Map.addLayer(
 );
 
 
-// STEP 19: CREATE LEGEND
 
 var legend = ui.Panel({
   style: {
@@ -334,9 +258,6 @@ var averageLST = LST.reduceRegion({
 });
 
 print('Average Land Surface Temperature:', averageLST);
-// ==================================================
-// STEP 21: EXPORT FINAL CEI CLASSIFIED MAP
-// ==================================================
 
 Export.image.toDrive({
   image: CEI_Class.toInt8(),
